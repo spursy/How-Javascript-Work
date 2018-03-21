@@ -1,6 +1,7 @@
 >文章翻译自V8团队系列博客中[Launching Ignition and TurboFan](https://v8project.blogspot.al/2017/05/launching-ignition-and-turbofan.html)
 
 今天我怀着无比激动的心情宣布V8执行Javascript的管道5.9版将会与Chrome的M59同步。最新版的执行管道将会为Javascript带来显著的性能和内存占用的优化。关于更多性能优化数据我们会在文末有大量的论述，首先让我们认识下Ignition和TurboFan。
+
 ![Ignition.png](https://upload-images.jianshu.io/upload_images/704770-69a5273f9e9ad303.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 ![TurboFan.png](https://upload-images.jianshu.io/upload_images/704770-d0146def9e6ab951.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
@@ -30,6 +31,7 @@ V8团队过去一直在使用[Telemetry-Catapult](https://github.com/catapult-pr
 ![Reduction in time spent in V8 for user interaction benchmarks.png](https://upload-images.jianshu.io/upload_images/704770-ce725c2f58b0695b.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
 虽然Speedometer是一个综合标准，我们之前也没发现其它综合测试标准可以比它更准确描述现代Javascript在真实环境中性能。在管道技术切换到Ignition和TurboFan后，Speedometer的综合指标在不同的平台略微有些差异，但是整体上提高了5-10%。
+
 ![benchmarkscores.Improvements on Web and Node.js benchmarks .png](https://upload-images.jianshu.io/upload_images/704770-71fdff4b109f12cf.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
 与此同时Ignition和TurboFan也减少了V8整体的内存占用。在M59版的Chrome浏览器中，新的管道技术可以为桌面端和移动端减少5-10%不等的内存占用。Ignition内存占用的减少最总导致V8整体内存占用的优化，这一方面我在[之前的文章](https://v8project.blogspot.al/2016/08/firing-up-ignition-interpreter.html)中有所涉猎。

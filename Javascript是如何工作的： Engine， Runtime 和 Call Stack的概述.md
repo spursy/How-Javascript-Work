@@ -34,6 +34,7 @@ V8引擎主要包含两个部分：
 
 *它们来自于哪里呢？*
 *它们的来历有些复杂。*
+
 ![Runtime.png](https://upload-images.jianshu.io/upload_images/704770-274c37d32c2791cd.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
 诸如DOM、AJAX、setTimeout等其它是由浏览器提供的，我们称之为WEB APIs。
@@ -85,9 +86,11 @@ function foo() {
 foo();
 ```
 Javascript引擎执行这段代码是从foo函数开始，在这个函数中不断调用自己并没有设置终止条件，从而产生无限循环。每一次执行foo，Call Stack都会添加一次函数。*这就像下面显示的那样：*
+
 ![Overflowing.png](https://upload-images.jianshu.io/upload_images/704770-a3c71cbd76c4ed3b.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
 当Javascript引擎中的Call Stack的长度，超过Javascript执行环境中Call Stack的实际长度时，Javascript执行环境（Chrome浏览器或Node）就会抛出下面的异常。
+
 ![Exception.png](https://upload-images.jianshu.io/upload_images/704770-74c6f4e82f16aadb.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
 
