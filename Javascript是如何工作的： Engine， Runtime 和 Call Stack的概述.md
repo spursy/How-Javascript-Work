@@ -99,7 +99,9 @@ Javascript引擎执行这段代码是从foo函数开始，在这个函数中不�
 你也许会问这怎么也算是一个问题。当Call Stack有待执行的函数时，浏览器会阻塞在这里，并不做其它的任务。这也意味着你不可能在app中呈现流畅复杂的UI。
 
 问题不仅仅如此，一旦Call Stack中等待执行的任务很多时，浏览器要在很长的时间内都不能回应其它事件。许多浏览器这时都会抛出一个提示信息，征求你是否要关闭页面。
+
 ![PopError.jpeg](https://upload-images.jianshu.io/upload_images/704770-4bee70decaa730be.jpeg?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
 这样必然将导致非常差的用户体验。
 
 我们如何在复杂的环境下既不阻塞UI同时也不使浏览器长时间没有回应？好吧，这里我就不卖关子了，可以使用异步回调。
