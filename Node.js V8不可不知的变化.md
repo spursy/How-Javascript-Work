@@ -205,30 +205,27 @@ Turbofan背后的驱动原理优化直观的编程行为，也就是说，针对
 
 此外，对于那些因为其性能优势而使用for-in的人来说，当我们失去大量速度而没有其他替代方法时，这将是一个痛苦的时刻。
 
+### 创建对象
 
+在编程中，我们总是需要创建对象。因此对比创建对象的不同方式，将会很有意义。
 
+我们将会对比以下三种测试用例的性能表现：
+- 通过对象文字的方式创建对象 （literal）
+- 通过Ecmascript 2015中的class特性创建对象 （class）
+- 通过构造函数创建对象 （constructor）
 
+**Code:** [https://github.com/davidmarkclements/v8-perf/blob/master/bench/object-creation.js](https://github.com/davidmarkclements/v8-perf/blob/master/bench/object-creation.js)
 
+![object.png](https://upload-images.jianshu.io/upload_images/704770-80d6a2ebb3728d7d.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
+在Node 6 （V8 5.1）中，所有的方法的性能都是一样的。在Node 8.0-8.2中，通过Ecmascript2015中的class特性创建类是其它方式性能的一半。因此，你懂的，注意这一点。
 
+在V8 5.9各种方法的性能表现又是一样的了。
 
+后来在V8 6.0和6.1中，创建对象的性能变得异常的好，超过40亿每分钟的处理速度。这简直不敢相信。
 
+![incrediatble.gif](https://upload-images.jianshu.io/upload_images/704770-1ce9f33883f6dc6c.gif?imageMogr2/auto-orient/strip)
 
+从性能分析图标可以看出，通过构造函数创建对象的性能相对弱一点。因此我们祈求未来创建对象的不同方法中，性能最友好的代码都是对象文字的方式。
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+这很适合我们，因为我们建议从函数（而不是使用类或构造函数）返回对象文字作为一般的最佳编码实践。
