@@ -128,3 +128,136 @@ countOdd();
 我们可以对任何封装promise对象的函数使用async／await关键字。然而我们不能使用在回调式的异步函数上（如setTimeout）。
 
 #### EventEmitter模块
+
+EventEmitter是用来促进Node.js中对象间的通信。EventEmitter以Node.js异步事件驱动为内核。Node.js许多内置模块都是继承自EventEmitter。
+
+EventEmitter的代码很简单：事件的触发对象触发已经注册的监听程序。因此，事件触发对象通常有两个特点：
+
+- 触发已经注册的事件
+- 注册事件或移除注册事件
+
+我们通过对象继承EventEmitter，就可以使用EventEmitter。
+
+```
+class MyEmitter extends EventEmitter {
+
+}
+```
+
+通过实例化已经继承EventEmitter的类生成触发事件的对象。
+
+```
+const myEmitter = new MyEmitter();
+```
+
+在事件触发对象整个生命周期中，我们通过触发事件名，触发任何我们像要作用的函数。
+
+```
+myEmitter.emit('something-happened');
+```
+
+触发事件是新条件出现的信号。这些新条件通常是事件触发对象内部状态改变的信号。
+
+我们通过on函数注册监听事件，每当触发事件的对象触发监听事件的事件名，这些监听事件将会执行。
+
+#### 事件并不就是异步
+*让我们看一个示例代码：*
+
+```
+const EventEmitter = require('events');
+
+class WithLog extends EventEmitter {
+  execute(taskFunc) {
+    console.log('Before executing');
+    this.emit('begin');
+    taskFunc();
+    this.emit('end');
+    console.log('After executing');
+  }
+}
+
+const withLog = new WithLog();
+
+withLog.on('begin', () => console.log('About to execute'));
+withLog.on('end', () => console.log('Done with execute'));
+
+withLog.execute(() => console.log('*** Executing task ***'));
+```
+
+WithLog是事件触发对象。在对象内部定义一个execute函数。这个函数接收一个参数，这个参数是任务函数，这个任务函是一个打印函数。在这个任务函数执行前后都触发事件。
+
+为了看清楚事件执行的先后顺序，我们注册了相应名字的事件，最后我们执行WithLog对象中execute函数。
+
+*下面是函数执行的结果：*
+
+```
+Before executing
+About to execute
+*** Executing task ***
+Done with execute
+After executing
+```
+
+我想让大家注意到的是这里的输出内容都是同步的。在这段代码中没有任何异步的行为发生。
+
+- 输出第一行是"Before executing"
+- 以begin命名的事件输出"About execute"
+- 通过参数传递的函数输出"***Executing task***"
+- 以begin命名的事件输出"Done with execute"
+- 最后输出"After executing"
+
+就像古老的回调函数，不假设事件是同步还是异步执行。
+
+我们可以假设下面的测试用例（在withLog对象中的execute函数是setImmediate）：
+
+```
+// ...
+
+withLog.execute(() => {
+  setImmediate(() => {
+    console.log('*** Executing task ***')
+  });
+});
+```
+
+现在函数输出将会是下面：
+
+```
+Before executing
+About to execute
+Done with execute
+After executing
+*** Executing task ***
+```
+
+在异步回调函数后，执行"Done with execute"和"After executing"将不在正确。
+
+我们需要回调函数（或promises对象）与事件驱动的对象相结合，实现在异步调用后执行事件触发。上面的例子就很好的说明这一点。
+
+事件相对于传统回调函数还有另一个优势，程序可以通过定义不同的监听对象，实现多次触发相同的函数。如果通过回调函数实现相同的功能，则需要在函数中些许多逻辑。事件是实现在程序核心基础上，通过外部插件构建函数的好方法。你可以把事件想象成勾子点，通过勾子点状态的变化定制一些函数。
+
+#### 异步的事件
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
