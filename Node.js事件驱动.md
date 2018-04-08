@@ -1,3 +1,5 @@
+本文翻译自：[Understanding Node.js Event-Driven Architecture](https://medium.freecodecamp.org/understanding-node-js-event-driven-architecture-223292fcbc2d)
+
 ![event-drive.jpeg](https://upload-images.jianshu.io/upload_images/704770-ebf164104a4eb4df.jpeg?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
 
 许多Node.js模块（诸如Http requests、responses、streams等）内置了EventEmitter模块，因此这些模块可以通过emit和listen实现事件的触发和监听。
