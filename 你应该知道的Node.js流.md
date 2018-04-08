@@ -115,7 +115,7 @@ server.listen(8000);
 
 ![server-memory-opt.gif](https://upload-images.jianshu.io/upload_images/704770-e6ae3cd36931864e.gif?imageMogr2/auto-orient/strip)
 
-**发生了什么**
+ **发生了什么**
 
 当客户端请求大文件时，程序一次将一块数据生成流文件，这就意味着我们不需要将一点数据内容缓存在内存中。内存的占用也仅仅上升了25兆。
 
@@ -124,3 +124,152 @@ server.listen(8000);
 最好不要通过修改程序默认的缓存空间的方式，使用fs.readFile实现大内存文件的读取。但是如果使用fs.createReadStream,即便请求2GB的数据流也不会有问题。最重要的是，使用第二种方式的内存占用几乎不发生变化。
 
 #### 流101
+
+流在Node.js中有四种：Readable、Writable、Duplex和Transform。
+
+- 可读流（Readable Stream）： 可被消费的资源的抽象，如 fs.createReadStream方法
+- 可写流（Writable Stream）：数据可被写入目的地的抽象，如 fs.createWriteStream方法
+- 双工流（Duplex Stream）：既是可读流，又是可写流， 如 TCP socket
+- 转换流（Transform Stream）：以双工流为基础，可以把读取的数据或者写入的数据进行修改或事转换。如 zlib.createGzip函数使用gzip实现数据的压缩。我们可以认为转换流的输入是可写流，输出是可读流。你也许听说过"通过流"的转换流。
+
+所有流都是EventEmitter模块的实例。它们触发可读和可写数据的事件。但是，程序可以使用pipe方法消费流数据。
+
+**管道（pipe）函数**
+
+*下面是一段你值得记忆的魔法代码：*
+
+`
+readableSrc.pipe(writableDest)
+`
+
+在上面简短的代码中，我们将可读流的输出，作为数据源，放入管道中、将可写流的输入，作为管道的目的地。源数据必须是可读流，目的地必须是可写流。它们也可以同时是双工流或者转换流。事实上，如果我们将管道化为双工流，我们就可以像linux的方式使用管道链：
+```
+readableSrc
+  .pipe(transformStream1)
+  .pipe(transformStream2)
+  .pipe(finalWrtitableDest)
+ ```
+
+管道函数返回的是目标流，它可以允许程序做上面的链式调用。下面的代码： 流a是可读流、流b与c是双工流、流c是可写流。
+```
+a.pipe(b).pipe(c).pipe(d)
+# Which is equivalent to:
+a.pipe(b)
+b.pipe(c)
+c.pipe(d)
+# Which, in Linux, is equivalent to:
+$ a | b | c | d
+```
+
+管道（pipe）方法是实现消费流中最简单的方式。通常建议使用管道函数（pipe）或者事件消费流，但是避免将它们混合使用。通常当你使用管道（pipe）函数时，你就不需要使用事件。但是如果程序需要定制流的消费，事件可以是一个不错的选择。
+
+**流事件**
+除了读取可读流源，并把读取的数据写入到可写的目的地上。管道（pipe）还可以自动管理一些事情。例如：它可以处理异常，结束文件和当一个流比其它流更快或更慢。
+
+但是，流可以通过事件被直接消费。下面是一段等效于管道（pipe）方法的程序，它通过简化的、与事件等效的代码实现数据的读取或写入。
+```
+# readable.pipe(writable)
+readable.on('data', (chunk) => {
+  writable.write(chunk);
+});
+readable.on('end', () => {
+  writable.end();
+});
+```
+
+这里有一系列可用于可读、可写流的事件或函数。
+
+![event-function.png](https://upload-images.jianshu.io/upload_images/704770-6f014fcceaf90969.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+
+这些事件或函数通常以某种方式相关联，因为它们经常在一起使用。
+
+关于可读流的重要事件有：
+- data事件，当流传递给消费者一块数据时触发
+- end事件，当流中没有数据被消费时触发
+
+关于可写流的重要事件有：
+-drain事件，这是可写流接受数据时的信号
+-finish事件，当所有的数据已经刷新到系统底层时触发
+
+事件和函数可以组合在一起，用于自定义流或流的优化。为了消费可读流，程序可以使用pipe/unpipe方法，或是read/unshift/resume方法。为了消费可写流，程序可以将它作为pipe/unpipe的目的地，或是通过write方法写入数据，在写入完成后调用end方法。
+
+**可读流中的暂停（Paused）和流动（Flowing）模式**
+
+可读流中存在两种模式，影响程序对可读流的使用：
+- 可读要么处在暂停（paused）模式
+- 要么处在流动（flowing）模式
+
+这些模式又是被认为是拉和推模式。
+
+所有的可读流在默认情况下都是从暂停模式开始，但是程序需要时，很容易转换成流动模式或事暂停模式。有时这种转换将是自发的。
+
+当可读流在暂停（paused）模式时，我们可以使用read方法按需读取流数据。但是，对于处在流动（flowing）模式下的可读流，数据一直都处在流动的模式，我们必须通过监听事件来消费数据。
+
+在流动（flowing）模式下，如果没有被消费，数据可能会丢失。这就是在程序中有流动的可读流时，程序需要data事件处理数据的原因。事实上，只需要添加data事件就可以将流从暂停转换为流动模式和解除程序与事件监听器的绑定、将流从流动模式转换为暂停模式。其中的一些事为了向后兼容老版本Node流的接口。
+
+开发者可以使用resume方法和pause方法，手动实现两种流模式的转换。
+
+![mode-transform.png](https://upload-images.jianshu.io/upload_images/704770-b284f1099d410a3e.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+当程序使用管道（pipe）方法消费可读流时，开发这就不必关心流模式的转换了，因为管道（pipe）会自动实现。
+
+#### 实现流
+
+当我们Node.js中的流时，有两种不同的任务：
+- 继承流的任务
+- 消费流的任务
+
+到目前为止，我们仅仅讨论着消费流。让我们实现一些吧！
+
+*实现流需要我们在程序中引入流模块*
+
+ **实现可写流**
+
+开发者需要使用流模块中的Writeable构造器，实现可写流。
+
+`
+const { Writable } = require('stream');
+`
+
+开发者实现可写流有很多种方式。例如：通过继承writable构造器
+
+```
+class myWritableStream extends Writable {
+}
+```
+
+但是，我喜欢更简单构造器实现的方式。开发者仅仅通过writable接口创建对象并传递一些选项。一个必须函数选项是写入函数，暴露要写入的数据块。
+
+```
+const { Writable } = require('stream');
+const outStream = new Writable({
+  write(chunk, encoding, callback) {
+    console.log(chunk.toString());
+    callback();
+  }
+});
+
+process.stdin.pipe(outStream);
+```
+
+写入函数有三个参数：
+
+- chunk通常是buffer数组，除非开发者对流做了自定义的配置
+- encoding参数在测试用例中是需要的。但是开发者通常可以忽略
+-  callback是在程序处理数据块后，开发者调用的回调函数。这里通常是写入操作成功与否的信号。如果是写入异常的信号，调用出现异常的回调函数。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
