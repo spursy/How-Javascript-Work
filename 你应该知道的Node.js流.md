@@ -259,17 +259,120 @@ process.stdin.pipe(outStream);
 - encoding参数在测试用例中是需要的。但是开发者通常可以忽略
 -  callback是在程序处理数据块后，开发者调用的回调函数。这里通常是写入操作成功与否的信号。如果是写入异常的信号，调用出现异常的回调函数。
 
+在outStream类中，程序仅仅将数据转换为字符串类型打印出来，并在没有出现异常时调用回调函数，以此来标志程序的成功执行。这是一个简单但不是特别有效的回声流，程序会输出任何输入的数据。
 
+要使用这个流，我们可以简单地将它与process.stdin一起使用，这是一个可读的流，所以我们可以将process.stdin传入我们的outStream。
 
+当程序执行时，任何通过process.stdin输入的数据都会被outStream中的console.log打印出来。
 
+由于这个功能可以通过Node.js内置模块实现，因此这并不是一段非常实用的流。它与process.stdout的功能非常类似。当我们使用下面的代码可以实现相同的功能：
 
+`
+process.stdin.pipe(process.stdout);
+`
 
+**实现可读流**
 
+为了实现一个可读流，开发者需要引入Readable的接口病通过这个接口构建对象：
 
+```
+const { Readable } = require('stream');
+const inStream = new Readable({});
+```
 
+这是实现可读流的最简单方式，开发者可以直接推送数据以供消费者消费。
 
+```
+const { Readable } = require('stream'); 
+const inStream = new Readable();
+inStream.push('ABCDEFGHIJKLM');
+inStream.push('NOPQRSTUVWXYZ');
+inStream.push(null); // No more data
+inStream.pipe(process.stdout);
+```
+当程序中推送一个空对象时，这就意味着不再有数据供给可读流。
 
+开发者可以将可读流通过管道传给process.stdout的方式，来消费可读流。
 
+执行这段代码，程序可以读取来自可读流的数据，并将可数据打印出来。非常简单，但是并不高效。
 
+上段代码的本质是：把数据推送给流，然后将流通过管道传给process.stdout消费。其实开发者可以在在消费者请求流时，按需推送数据，这种方式比上一种更高效。可以通过实现readable流中的read函数实现：
+
+```
+const inStream = new Readable({
+  read(size) {
+    // there is a demand on the data... Someone wants to read it.
+  }
+});
+```
+
+在readable流中调用read函数，程序可以将部分需要数据传输到队列上。例如：每次向队列中推送一个字母，字母的的序号从65（代表A）开始，每次推送的字母序号都自增1：
+```
+const inStream = new Readable({
+  read(size) {
+    this.push(String.fromCharCode(this.currentCharCode++));
+    if (this.currentCharCode > 90) {
+      this.push(null);
+    }
+  }
+});
+inStream.currentCharCode = 65;
+inStream.pipe(process.stdout);
+```
+
+当消费者正在消费可读流时，read函数就会被激活，程序就会推送更多的字母。通过向列些推送空对象，终止循环。如上代码中，当字母的序号超过90时，终止循环。
+
+这段代码的功能与之前实现的代码是等效的，但是当消费者要读流时，程序可以按需推送数据。因此建议使用这种实现方式。
+
+**实现双工、转换流**
+
+通过双工流，开发者可以将对象分别实现可读流和可写流，就像对象继承了两个可读流和可写流接口。
+
+下面是一个双工流，它结合了上面已经实现的可读流、可写流的例子：
+
+```
+const { Duplex } = require('stream');
+
+const inoutStream = new Duplex({
+  write(chunk, encoding, callback) {
+    console.log(chunk.toString());
+    callback();
+  },
+
+  read(size) {
+    this.push(String.fromCharCode(this.currentCharCode++));
+    if (this.currentCharCode > 90) {
+      this.push(null);
+    }
+  }
+});
+
+inoutStream.currentCharCode = 65;
+process.stdin.pipe(inoutStream).pipe(process.stdout);
+```
+
+通过实现双工流的对象，程序可以读取A－Z的字母，然后按顺序打印出来。开发者将stdin可读流传输到双工流，然后将双工流传输到stdout可写流中，打印出A－Z字母。
+
+在双工流中的可读流与可写流是完全独立的，双工流仅仅是一个对象同时具有可读流和可写流的功能。理解这一点至关重要。
+
+转换流比双工流更有趣，因为它的结果是通过输入流计算出来的。
+
+对于双工流，并不需要实现read和write函数，开发者仅仅需要实现transform函数，因为transform函数已经实现了read函数和write函数。双工流具有写入write函数的签名，开发者可以使用它推送数据。
+
+下面是将输入的数字母转换为大写的格式后，然后把转换后的数据传给可写流：
+
+```
+const { Transform } = require('stream');
+
+const upperCaseTr = new Transform({
+  transform(chunk, encoding, callback) {
+    this.push(chunk.toString().toUpperCase());
+    callback();
+  }
+});
+
+process.stdin.pipe(upperCaseTr).pipe(process.stdout);
+```
+在这个例子中，开发者仅仅通过transform函数，就实现了向上面双工流的功能。在transform函数中，程序将数据转换为大写后推送到可写流中。
 
 
