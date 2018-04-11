@@ -376,3 +376,171 @@ process.stdin.pipe(upperCaseTr).pipe(process.stdout);
 在这个例子中，开发者仅仅通过transform函数，就实现了向上面双工流的功能。在transform函数中，程序将数据转换为大写后推送到可写流中。
 
 
+#### 流的对象模式
+
+默认情况下，流只只接受Buffer和String的数据。但是开发者可以通过设置objectMode标识的值，可以使流接受任何Javascript数据。
+
+下面的例子可以证明这一点。通过一组流将以逗号分隔的字符串转换为Javscript对象，于是"a,b,c,d"转换成｛a: b, c : d｝。
+
+```
+const { Transform } = require('stream');
+const commaSplitter = new Transform({
+  readableObjectMode: true,
+  transform(chunk, encoding, callback) {
+    this.push(chunk.toString().trim().split(','));
+    callback();
+  }
+});
+const arrayToObject = new Transform({
+  readableObjectMode: true,
+  writableObjectMode: true,
+  transform(chunk, encoding, callback) {
+    const obj = {};
+    for(let i=0; i < chunk.length; i+=2) {
+      obj[chunk[i]] = chunk[i+1];
+    }
+    this.push(obj);
+    callback();
+  }
+});
+
+const objectToString = new Transform({
+  writableObjectMode: true,
+  transform(chunk, encoding, callback) {
+    this.push(JSON.stringify(chunk) + '\n');
+    callback();
+  }
+});
+process.stdin
+  .pipe(commaSplitter)
+  .pipe(arrayToObject)
+  .pipe(objectToString)
+  .pipe(process.stdout)
+```
+
+commaSplitter转换流将输入的字符串（例如：“a，b，c，d”）转换为数组（［“a”， “b”， “c”， “d”］）。代码中添加writeObjectMode标识是必要的，因为在transform函数中推的数据是对象而不是字符串。
+
+将commaSplitter输出的可读流传输到传输到转换流arrayToObject中。在arrayToObject中需要设置writableObjectMode标识，因为需要接收对象。由于需要在程序中推送对象（将传入的数组转换为对象），这也是程序中设置readableObjectMode标识的原因。最后，转换流objectToString接收对象，但是输出字符串。这就是程序中只设置writableObjectModel标识的原因。输出的可读流时正常的字符串（序列化后的数组）。
+
+![transform-result.png](https://upload-images.jianshu.io/upload_images/704770-bafa5fb8d6b0b25a.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+**Node的内置转换流**
+
+Node有许多内置转换流，如：lib和crypto流。
+
+下面的代码是使用zlib.createGzip()流与fs模块的可读和可写流相结合，实现压缩文件的代码：
+
+```
+const fs = require('fs');
+const zlib = require('zlib');
+const file = process.argv[2];
+
+fs.createReadStream(file)
+  .pipe(zlib.createGzip())
+  .pipe(fs.createWriteStream(file + '.gz'));
+```
+
+程序将读取文件的可读流传输进Node内置的转换流zlib中，然后传输到创建压缩文件的可写流中。因此开发者只要将需要压缩的文件路劲作为参数传进程序中，就可以实现任何文件的压缩。
+
+使用管道函数是一件不错选择的原因，是由于开发者可以将管道函数与事件结合使用。例如：开发者相让程序可以显示脚本运行的进度，并在脚本执行完毕后打印出"Done"信息。由于pipe函数返回的是目标流，开发着可以在获取目标流后注册事件链：
+
+```
+const fs = require('fs');
+const zlib = require('zlib');
+const file = process.argv[2];
+
+fs.createReadStream(file)
+  .pipe(zlib.createGzip())
+  .on('data', () => process.stdout.write('.'))
+  .pipe(fs.createWriteStream(file + '.zz'))
+  .on('finish', () => console.log('Done'));
+```
+
+因此，通过pipe函数开发者可以很容易操作流，同时也可以在需要时，对经过pipe函数处理后的目标，通过事件做一些定制交互。
+
+管道函数的强大之处在于，使用易理解的方式将多个管道函数联合在一起。例如：不在向上个示例那样使用监听事件，开发者可以通过传入一个转换流，显示脚本执行的进度。
+
+```
+const fs = require('fs');
+const zlib = require('zlib');
+const file = process.argv[2];
+
+const { Transform } = require('stream');
+
+const reportProgress = new Transform({
+  transform(chunk, encoding, callback) {
+    process.stdout.write('.');
+    callback(null, chunk);
+  }
+});
+
+fs.createReadStream(file)
+  .pipe(zlib.createGzip())
+  .pipe(reportProgress)
+  .pipe(fs.createWriteStream(file + '.zz'))
+  .on('finish', () => console.log('Done'));
+```
+
+reportProgress只是一个简单的转换流，在这个流中同样实现显示脚本执行进度的功能。值得注意的是，代码中使用callback函数推送transform函数中的数据。这与先前示例中this.push()的功能是等效的。
+
+合并流的应用是无止境的。例如：开发者要先加密文件，然后压缩文件或是先压缩或加密。如果要完成这个功能，开发者只要将文件按照顺序传入流中。可以使用crypto模块实现：
+
+```
+const crypto = require('crypto');
+// ...
+fs.createReadStream(file)
+  .pipe(zlib.createGzip())
+  .pipe(crypto.createCipher('aes192', 'a_secret'))
+  .pipe(reportProgress)
+  .pipe(fs.createWriteStream(file + '.zz'))
+  .on('finish', () => console.log('Done'));
+```
+
+上面的代码实现了压缩、加密文件，只要知道密码的用户才可以使用加密后的文件。因为开发者不能按照普通解压的工具对加密后压缩文件，进行解压。
+
+对于任何通过上面代码压缩的文件，开发者只需要以相反的顺序使用crypto和zlib流，代码如下：
+
+```
+fs.createReadStream(file)
+  .pipe(crypto.createDecipher('aes192', 'a_secret'))
+  .pipe(zlib.createGunzip())
+  .pipe(reportProgress)
+  .pipe(fs.createWriteStream(file.slice(0, -3)))
+  .on('finish', () => console.log('Done'));
+```
+
+假设传输进去的文件是压缩后的文件，上面的程序首先会生成可读流，然后传输到crypto的createDecipher()流中，接着将输出的流文件传输到zlib的createGunzip()流中，最后写入到文件中。
+
+上面就是我对这个主题的总结，感谢您的阅读，期待下次与你相遇。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
