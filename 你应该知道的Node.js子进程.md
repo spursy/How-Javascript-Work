@@ -122,7 +122,7 @@ wc.stdout.on('data', (data) => {
 
 #### Shell语法和exec函数
 
-默认情况下，spawn函数并不会创建新的shell，来执行通过参数传递进来的命令。由于不会创建新的shell，这是spawn函数比exec函数高效的主要原因。exec函数与spawn函数还有一点主要的区别，spawn函数通过流操作命令执行的结果，而exec函数则将程序执行的结果缓存起来，最后将缓存的结果传给回调函数中。
+默认情况下，spawn函数并不会衍生新的shell，来执行通过参数传递进来的命令。由于不会创建新的shell，这是spawn函数比exec函数高效的主要原因。exec函数与spawn函数还有一点主要的区别，spawn函数通过流操作命令执行的结果，而exec函数则将程序执行的结果缓存起来，最后将缓存的结果传给回调函数中。
 
 下面通过exec函数实现find|wx命令的例子:
 ```
@@ -147,16 +147,198 @@ exec函数缓存命令的输出，并将输出的结果作为回调函数的参�
 
 如果执行命令后得到的数据太大，spawn函数将是很不错的选择，因为使用spawn函数会标准的IO对象转换为流。
 
+程序可以衍生出继承父进程标准I／O对象的子进程，如果需要，可以在子进程中使用shell句法。下面的代码就是实现定制子进程的代码：
+
+```
+const child = spawn('find . -type f | wc -l', {
+  stdio: 'inherit',
+  shell: true
+});
+```
+
+设置**stdion: 'inherit'**，当执行代码时，子进程将会继承主进程的stdin、stdout和stderr。主进程的process.stdout 流将会触发子进程的事件处理函数，并在事件处理函数中立刻输出结果。
+
+设置**shell: true**，就像exec函数一样，程序可以向衍生函数传递shell句法，作为衍生函数的参数。即便这样，依旧可以利用衍生函数中流的特性。**不得不说这样非常的酷**
+
+除了在spawn衍生函数的options对象中设置shell和stdio，开发者还有设置其它的选项。通过cwd设置程序工作的目录。例如下面将程序的工作目录设置为下载文件夹，实现计算对目的文件夹中所有文件计数的代码：
+
+```
+const child = spawn('find . -type f | wc -l', {
+  stdio: 'inherit',
+  shell: true,
+  cwd: '/Users/samer/Downloads'
+});
+```
+
+使用options对象env属性，可以设置对子进程可见的环境变量。process.env是env属性的默认值,提供对当前进程环境的任何命令访问权限。开发者可以设置env属性为空对象或子进程可见的环境变量值，实现定制子进程可见环境变量。
+
+```
+const child = spawn('echo $ANSWER', {
+  stdio: 'inherit',
+  shell: true,
+  env: { ANSWER: 42 },
+});
+```
+
+上面的echo命令并不能访问父进程的环境变量。由于设置env属性值，进程没有访问$HONE的权限但是可以访问$ANSWER。
+
+程序设置spawn函数的option对象中detached属性，可以实现子进程完全独立于父进程的调用。
+
+假设我们有一个让事件循环繁忙的timer.js测试程序：
+```
+setTimeout(() => {  
+  // keep the event loop busy
+}, 20000);
+```
+
+程序可以设置spawn函数的option对象detached属性，实现在后台执行timer.js程序：
+
+```
+const { spawn } = require('child_process');
+
+const child = spawn('node', ['timer.js'], {
+  detached: true,
+  stdio: 'ignore'
+});
+
+child.unref();
+```
+
+独立子进程运行在不同的系统，有不同的行为。在Windows环境下，独立的子进程有独立的控制台窗口。在Linux环境下，独立的子进程将会成为新的进程组或会话的领导者。
+
+在独立的子进程中调用unref函数，父进程可以可以独立于子进程终止运行。这一特性对于下面的场景很适用：子进程需要在后台运行很长时间、子进程的stdio流也要独立于父进程。
+
+上面的示例代码中，设置option对象的detached属性为true ，独立的子进程在后台执行nodejs代码（timer.js）。设置option对象的option对象的stdio属性为ignore，子进程拥有独立于主进程的stdio流。这样就可以实现在子进程还是后台执行时，终止父进程。
+
+### Noted
+
+#### execFile函数
+如果开发者需要不使用shell执行文件，execFile函数是一个不错的选择。execFile函数于exec函数很像，但是由于execFile并不会衍生新的shell，这是execFile函数比exec函数高效的主要原因。在Windows环境下，诸如.bat和.cmd文件并不能独立执行。但是可以通过exec函数或是设置spawn函数的shell属性执行这些文件。
+
+#### ＊Sync函数
+子进程模块中的spawn函数，exec函数和execFile函数同样有同步、阻塞的相应函数。它们将会等待子进程执行完毕后退出。
+
+```
+const { 
+  spawnSync, 
+  execSync, 
+  execFileSync,
+} = require('child_process');
+```
+这些同步的函数对于简化所要执行的脚本或处理任何程序启动的任务都非常有用，但是在其它方面要避免使用它们。
+
+#### fork函数
+
+fork函数和spawn函数在衍生子进程时并不相同。它们的区别主要在于：通过fork函数衍生的子进程会建立通信频道，衍生的子进程可以通过send函数向主进程发送信息，主进程也可以通过send函数向子进程发送信息。实现通过的接受需要EventEmitter模块接口，下面是示例代码：
+
+**父进程代码：**
+```
+const { fork } = require('child_process');
+
+const forked = fork('child.js');
+
+forked.on('message', (msg) => {
+  console.log('Message from child', msg);
+});
+
+forked.send({ hello: 'world' });
+```
+
+**子进程代码：**
+```
+process.on('message', (msg) => {
+  console.log('Message from parent:', msg);
+});
+
+let counter = 0;
+
+setInterval(() => {
+  process.send({ counter: counter++ });
+}, 1000);
+```
+
+在父进程的程序中，开发者可以fork文件（这个文件将会通过node命令执行），然后监听message事件。当子进程调用process.send函数的时候，父进程的message事件将会被触发。在上面的代码中，子进程每分钟都会调用一次process.send函数。
+
+当从父进程向子进程传递数据时，在父进程中需要调用send函数后，子进程的message监听事件将会被触发，从而获取到父进程传递的消息。
+
+当执行上面的父进程后，父进程将会向子进程传递对象{hello: 'world'}，然后子进程将会把这些父进程传递的消息打印出来。同时子进程将每个一分钟向父进程发送一个递增的数字，这些数字将会被父进程打印在控制窗口。
+
+### Noted
+
+让我们看一个关于fork更实用的例子：
+
+开发者在http服务上开启两个api。其中之一是"/compute"，在这个api上将会做大量的计算，计算过程将会占用很长时间。我们可以用一个for循环模拟上面的场景：
+```
+const http = require('http');
+const longComputation = () => {
+  let sum = 0;
+  for (let i = 0; i < 1e9; i++) {
+    sum += i;
+  };
+  return sum;
+};
+const server = http.createServer();
+server.on('request', (req, res) => {
+  if (req.url === '/compute') {
+    const sum = longComputation();
+    return res.end(`Sum is ${sum}`);
+  } else {
+    res.end('Ok')
+  }
+});
+
+server.listen(3000);
+```
+
+上面的程序存在一个问题：当http服务"/compute"被请求时，由于for循环阻塞了http服务的进程，因此http服务将不能再处理其它api请求。
+
+根据程序长期运行的性质，我们可以相出很多种方案来优化代码性能。有一种方案是通过fork函数衍生出新的子进程，然后将计算的代码放在子进程中运行，运行结束后将结果传输给父进程。
+
+首先将longComputation函数封装在一个独立的js文件中，通过父进程的信息执行longComputation函数：
+```
+const longComputation = () => {
+  let sum = 0;
+  for (let i = 0; i < 1e9; i++) {
+    sum += i;
+  };
+  return sum;
+};
+
+process.on('message', (msg) => {
+  const sum = longComputation();
+  process.send(sum);
+});
+```
+
+现在，不在主进程中做longComputation函数中的运算，而是通过fork函数衍生出新的子进程，然后在子进程中计算，最后通过fork函数的信息传递机制将运算结果传回父进程中。
+
+```
+const http = require('http');
+const { fork } = require('child_process');
+
+const server = http.createServer();
+
+server.on('request', (req, res) => {
+  if (req.url === '/compute') {
+    const compute = fork('compute.js');
+    compute.send('start');
+    compute.on('message', sum => {
+      res.end(`Sum is ${sum}`);
+    });
+  } else {
+    res.end('Ok')
+  }
+});
+
+server.listen(3000);
+```
+当请求'/compute'时，子进程通过process.send函数将计算的结果传回给父进程，这样主进程的事件循环将不再发生阻塞。
 
 
+然而上面代码的性能受限于程序可以通过fork函数衍生出的进程数量。但是当通过http请求时，主进程一点也不会阻塞。
 
+如果服务是通过多个fork函数衍生的子进程，Node.js的cluster模块将会对来自外部的请求，做http请求的负载均衡处理。这就会是我下个主题所要讲述的内容。
 
-
-
-
-  
-
-
-
+以上就是我关于这个主题所有的内容，非常感谢你的阅读，期待下次再见。
 
 
