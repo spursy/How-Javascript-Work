@@ -289,3 +289,69 @@ if (cluster.isMaster) {
 
 通过测试百分之九十九的请求都可以得到响应。仅仅通过简单的几行代码，开发者就不在担心程序的崩溃。主进程就像一双眼睛一样替开发者盯主子进程的运行状况。
 
+#### 重启零停机
+
+如果我们需要重启所有的子进程，例如我们需要部署新的代码？
+
+有很多子进程正在运行，不是将它们全部重启，我们一次仅仅重启一个子进程。这样就可以保证在一个子进程重启时，其它的子进程仍然可以处理外部请求。
+
+使用Node.js内置模块cluster可以很容易实现上述示例。如果主进程一旦启动，我们不想在此重启主进程。在这种情况下，我们需要向主进程发送命令，让这条命令指挥它重启子进程。在linux系统上可以使用下面的方式实现，先在主进程上监听SIGUSR2事件，开发者可以使用"kill  进程的pid"命令触发主进程监听的SIGUSR2事件。实现如下：
+
+```
+// In Node
+process.on('SIGUSR2', () => { ... });
+
+
+// To trigger that
+$ kill -SIGUSR2 PID
+```
+
+通过上述方式，可以在不杀死主进程的情况下，通过命令引导主进程工作。因为SIGUSR2信号是用户命令，因此这条命令非常适合向主进程传递信号。如果你对为什么呢不使用SIGUSR1信号有疑问？这是因为Node.js使用SIGUSR1信号做debugger调试，因此我们要避免发生冲突。
+
+然而不幸的是在windows系统上并不支持上述的进程信号，因此我们必须通过其它方式引导主进程。我这里有一些替代方案。例如，1.使用标准的输入或套接字输入。 2. 监听进程的pid文件的存在和删除事件。这里为了让示例更简单，我仅仅假设Node.js服务是部署在Linux系统上。
+
+Node.js服务在Windows系统上可以很好的工作，但是我认为将服务部署在Linux系统上是更安全的选择。这不但是由于Node.js自身的原因，而且许多生产环境的工具在Linux系统上更加稳定。**以上仅仅是一家之言，你可以完全忽略**
+
+*顺便说一下，在最近的Windows系统上可以安装Linux系统。我在Windows的子linux系统上测试过，并没有明显的性能改进。如果正在使用的生产环境是Windows系统，你可以查一下[Bash on Windows](https://docs.microsoft.com/zh-cn/windows/wsl/about)，然后试一试Windows的子Linux的系统表现。*
+
+让我们再次回到最上面的例子上吧，当主进程接收到SIGUSR2的信号时，这就意味着是时候重启子进程了，并且要求每次仅仅重启一个子进程。
+
+在开始任务前，需要使用cluster.workers函数获取当前子进程的引用，并将它保存在数组中：
+
+`
+const workers = Object.values(cluster.workers);
+`
+然后，向restartWorker函数中传递将要重启的子进程在子进程数组中的序号。然后在函数中递归调用restartWorker函数，这时传递的参数是当前进程的序号加一，这样就可以实现按顺序重启子进程。下面是我使用的restartWorker函数代码：
+
+```
+const restartWorker = (workerIndex) => {
+  const worker = workers[workerIndex];
+  if (!worker) return;
+
+  worker.on('exit', () => {
+    if (!worker.exitedAfterDisconnect) return;
+    console.log(`Exited process ${worker.process.pid}`);
+    
+    cluster.fork().on('listening', () => {
+      restartWorker(workerIndex + 1);
+    });
+  });
+
+  worker.disconnect();
+};
+
+restartWorker(0);
+```
+
+在restartWorker函数中，我们获取子进程的引用后重启子进程。由于程序需要按照子进程在子进程数组中的位置递归调用restartWorker函数，因此程序需要一个终止递归的条件。当程序所有子进程都已经重启后，使用return结束函数。使用worker.disconnect函数终止子进程，但是在重启下一个子进程前需要衍生出新的子进程代替正在终止的子进程。
+
+开发者对当前进程注册exit事件，当前进程退出时，触发该事件。但是开发者必须确保退出子进程的行为是由于调用disconnect函数。如果exitedAfetrDisconnect变量是false，说明子进程不是由于调用disconnect函数导致的。这是直接调用return，不在往下继续处理。如果exitedAfetrDisconnect变量是true，程序继续往下执行并且衍生出新的子进程代替正在退出的进程。
+
+当衍生新的子进程后，程序继续重启子进程数组中下一个进程。但是衍生的子进程函数并不是同步的，因此不能在调用衍生函数后直接重启下一个子进程。然而，程序可以在衍生函数后注册listening事件。当新的衍生进程正常工作后触发listening事件，然后程序就可以按顺序重启子进程数组中下一个进程。
+
+为了测试上述代码，我们应该先获取主进程的pid，然后将它作为SIGUSR2信号的参数。
+
+`
+console.log(`Master PID: ${process.pid}`);
+`
+
